@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAM 3D — Mars</title>
+<style>
+:root{--bg:#05070b;--panel:#0d1219ee;--line:#1c2633;--tx:#e8eef5;--tx2:#9aa7b6;--tx3:#647184;
+--acc:#ff6a2b;--cyan:#3ec9dc;--ok:#3fd68f;--warn:#ffb02e;--bad:#ff5d5d;--mono:ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--tx);font:13px/1.4 'Segoe UI',system-ui,sans-serif;overflow:hidden}
+#c{position:fixed;inset:0;display:block}
+#ui{position:fixed;top:10px;left:10px;z-index:10;display:flex;flex-direction:column;gap:8px;max-width:240px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;backdrop-filter:blur(6px)}
+.card h4{font-size:10px;letter-spacing:1.5px;color:var(--tx3);text-transform:uppercase;margin-bottom:6px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+button{font:inherit;color:var(--tx);background:var(--bg2,#10161f);border:1px solid var(--line2,#273546);border-radius:5px;padding:4px 8px;cursor:pointer}
+button:hover{border-color:var(--acc);color:var(--acc)}
+button.primary{background:var(--acc);color:#160a04;border-color:var(--acc);font-weight:600}
+button.on{border-color:var(--cyan);color:var(--cyan)}
+input,select{font:inherit;color:var(--tx);background:#10161f;border:1px solid var(--line);border-radius:4px;padding:4px 6px;outline:none}
+.lay{display:flex;gap:4px;flex-wrap:wrap}
+.lay button{font-size:10.5px;padding:3px 7px}
+#hud{position:fixed;bottom:10px;left:10px;z-index:10;font-family:var(--mono);font-size:11px;color:var(--tx2);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
+#hud b{color:var(--cyan);font-weight:400}
+#status{position:fixed;top:10px;right:10px;z-index:10;font-family:var(--mono);font-size:10.5px;color:var(--tx3);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 9px;max-width:260px}
+#status .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bad);margin-right:4px}
+#status.ok .led{background:var(--ok)}
+#ai{position:fixed;bottom:10px;right:10px;z-index:10;width:330px;max-width:42vw}
+#ai .log{max-height:160px;overflow:auto;font-size:11.5px;color:var(--tx2);margin:6px 0}
+#ai .log .a{color:var(--tx)}#ai .log .m{color:var(--tx3);font-size:10px}
+#ai textarea{width:100%;resize:none;height:36px}
+.cross{position:fixed;top:50%;left:50%;width:18px;height:18px;transform:translate(-50%,-50%);pointer-events:none;z-index:9;opacity:0}
+.cross.on{opacity:.8}
+.cross::before,.cross::after{content:"";position:absolute;background:var(--cyan)}
+.cross::before{left:8px;top:0;width:2px;height:18px}.cross::after{top:8px;left:0;height:2px;width:18px}
+.hint{font-size:10.5px;color:var(--tx3)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-family:var(--mono);font-size:11px}
+.kv .k{color:var(--tx3)}.kv .v{color:var(--tx)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div class="card">
+    <h4>Layers (depth)</h4>
+    <div class="lay" id="layers">
+      <button data-l="elev" class="on">Elevation</button>
+      <button data-l="slope">Slope</button>
+      <button data-l="rough">Roughness</button>
+      <button data-l="hazard">Hazard</button>
+    </div>
+    <div class="hint" style="margin-top:5px">Exaggeration ×60 (cosmetic; measurements use true MOLA metres).</div>
+  </div>
+  <div class="card">
+    <h4>View</h4>
+    <div class="row">
+      <button id="btn-orbit" class="on">Orbit</button>
+      <button id="btn-surface" disabled>Enter surface</button>
+    </div>
+    <div class="hint" style="margin-top:5px" id="mode-hint">Click the globe to pick a point, then Enter surface for a geoguesser-style ground view.</div>
+  </div>
+</div>
+
+<div id="status"><span class="led"></span><span id="status-t">connecting…</span></div>
+
+<div id="hud">LAT <b id="h-lat">—</b> · LON <b id="h-lon">—</b> · ELEV <b id="h-elev">—</b></div>
+
+<div class="cross" id="cross"></div>
+
+<div id="ai" class="card">
+  <h4>NAM AI (hybrid)</h4>
+  <div class="log" id="ai-log"></div>
+  <textarea id="ai-input" placeholder="Ask: what is the gravity? / tallest volcano? / Tell me about Jezero"></textarea>
+  <div class="row" style="margin-top:5px"><button class="primary" id="ai-send" style="flex:1">Ask</button><button id="ai-clear">✕</button></div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const API = location.origin;   // same-origin FastAPI backend
+const MARS_R_KM = 3396.19;
+const EXAG = 60;               // cosmetic vertical exaggeration for the globe
+let MODE = 'orbit';            // 'orbit' | 'surface'
+let LAYER = 'elev';
+let picked = null;             // {lat,lon,elev,slope,rough,hazard}
+
+// ---- color ramps ----------------------------------------------------------
+function ramp(t, stops){ // stops: [[p,[r,g,b]],...]
+  t=Math.max(0,Math.min(1,t));
+  for(let i=0;i<stops.length-1;i++){
+    const [p0,c0]=stops[i],[p1,c1]=stops[i+1];
+    if(t>=p0&&t<=p1){const u=(t-p0)/(p1-p0||1);
+      return [c0[0]+(c1[0]-c0[0])*u,c0[1]+(c1[1]-c0[1])*u,c0[2]+(c1[2]-c0[2])*u];}}
+  return stops[stops.length-1][1];
+}
+const ELEV_RAMP=[[0,[20,30,80]],[.25,[60,40,40]],[.5,[120,70,50]],[.75,[180,110,70]],[1,[230,210,180]]];
+const HEAT_RAMP=[[0,[30,120,60]],[.5,[230,200,40]],[1,[220,40,40]]];
+function elevColor(e,min,max){return ramp((e-min)/(max-min),ELEV_RAMP);}
+function heatColor(v,lo,hi){return ramp((v-lo)/(hi-lo),HEAT_RAMP);}
+
+// ---- scene ----------------------------------------------------------------
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x05070b);
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.001,100);
+camera.position.set(0,0,3.2);
+const controls=new OrbitControls(camera,canvas);
+controls.enableDamping=true; controls.rotateSpeed=0.5; controls.minDistance=1.05; controls.maxDistance=6;
+scene.add(new THREE.AmbientLight(0x404050,1.2));
+const sun=new THREE.DirectionalLight(0xfff0e0,1.4); sun.position.set(5,3,5); scene.add(sun);
+const rim=new THREE.DirectionalLight(0x4060a0,0.4); rim.position.set(-5,-2,-3); scene.add(rim);
+
+// starfield
+const sg=new THREE.BufferGeometry(); const starN=2500; const sp=new Float32Array(starN*3);
+for(let i=0;i<starN;i++){const d=40,u=Math.random()*2*Math.PI,v=Math.acos(2*Math.random()-1);
+  sp[i*3]=d*Math.sin(v)*Math.cos(u);sp[i*3+1]=d*Math.sin(v)*Math.sin(u);sp[i*3+2]=d*Math.cos(v);}
+sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0x8899aa,size:0.05})));
+
+// ---- globe ----------------------------------------------------------------
+let globe=null, elevArr=null, layerArr={slope:null,rough:null,hazard:null}, gridW=360, gridH=180, eMin=0, eMax=1;
+const marker=new THREE.Mesh(new THREE.SphereGeometry(0.012,12,12),new THREE.MeshBasicMaterial({color:0x3ec9dc}));
+marker.visible=false; scene.add(marker);
+
+function sampleGrid(arr,w,h,lon,lat){ // lon 0..360, lat +90..-90
+  const x=(lon/360*w)%w, y=(90-lat)/180*(h-1);
+  const xi=Math.floor(x)%w, yi=Math.max(0,Math.min(h-1,Math.floor(y)));
+  return arr[yi*w+xi];
+}
+function lonLatFromPoint(p){
+  const v=p.clone().normalize();
+  const lat=Math.asin(v.y)*180/Math.PI;
+  let lon=Math.atan2(v.z,v.x)*180/Math.PI; if(lon<0)lon+=360;
+  return {lat,lon};
+}
+function colorFor(lon,lat,e,eMinL,eMaxL){
+  if(LAYER==='elev') return elevColor(e,eMinL,eMaxL);
+  if(LAYER==='slope') return heatColor(sampleGrid(layerArr.slope,gridW,gridH,lon,lat),0,30);
+  if(LAYER==='rough') return heatColor(sampleGrid(layerArr.rough,gridW,gridH,lon,lat),0,400);
+  return heatColor(sampleGrid(layerArr.hazard,gridW,gridH,lon,lat),0,1);
+}
+function buildGlobe(){
+  const W=gridW,H=gridH;
+  const positions=new Float32Array((W+1)*(H+1)*3);
+  const colors=new Float32Array((W+1)*(H+1)*3);
+  const idx=[];
+  for(let j=0;j<=H;j++) for(let i=0;i<=W;i++){
+    const lon=i/W*360, lat=90-j/H*180;
+    const e=sampleGrid(elevArr,W,H,lon,lat);
+    const rr=1 + (e/1000)/MARS_R_KM*EXAG;     // metres -> km -> fraction of R -> ×exaggeration
+    const ph=lon*Math.PI/180, th=lat*Math.PI/180;
+    const vi=j*(W+1)+i;
+    positions[vi*3]=rr*Math.cos(th)*Math.cos(ph);
+    positions[vi*3+1]=rr*Math.sin(th);
+    positions[vi*3+2]=rr*Math.cos(th)*Math.sin(ph);
+    const c=colorFor(lon,lat,e,eMin,eMax);
+    colors[vi*3]=c[0];colors[vi*3+1]=c[1];colors[vi*3+2]=c[2];
+  }
+  for(let j=0;j<H;j++) for(let i=0;i<W;i++){
+    const a=j*(W+1)+i,b=a+1,c=a+(W+1),d=c+1;
+    idx.push(a,c,b, b,c,d);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  g.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  globe=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.92,metalness:0.0}));
+  scene.add(globe);
+  globe._recolor=()=>{
+    const col=g.getAttribute('color');
+    for(let j=0;j<=H;j++) for(let i=0;i<=W;i++){
+      const lon=i/W*360, lat=90-j/H*180;
+      const e=sampleGrid(elevArr,W,H,lon,lat);
+      const c=colorFor(lon,lat,e,eMin,eMax);
+      const vi=j*(W+1)+i;
+      col.array[vi*3]=c[0];col.array[vi*3+1]=c[1];col.array[vi*3+2]=c[2];
+    }
+    col.needsUpdate=true;
+  };
+}
+
+// ---- status helper --------------------------------------------------------
+const statusEl=document.getElementById('status'), statusT=document.getElementById('status-t');
+function setStatus(ok,msg){statusEl.classList.toggle('ok',!!ok);statusT.textContent=msg;}
+
+// ---- load data ------------------------------------------------------------
+async function load(){
+  setStatus(false,'loading MOLA grid…');
+  try{
+    const hm=await fetch(`${API}/globe/heightmap`).then(r=>r.json());
+    elevArr=hm.data; gridW=hm.w; gridH=hm.h; eMin=hm.min; eMax=hm.max;
+    setStatus(false,'computing layers (C++)…');
+    const ly=await fetch(`${API}/globe/layers`).then(r=>r.json());
+    layerArr.slope=new Float32Array(ly.slope);layerArr.rough=new Float32Array(ly.rough);layerArr.hazard=new Float32Array(ly.hazard);
+    buildGlobe();
+    setStatus(true,'backend online · C++ cruncher + AI');
+    aiLog('NAM 3D ready. Click the globe, then “Enter surface”.','m');
+  }catch(e){
+    setStatus(false,'backend offline — run: cd backend && python3 server.py');
+    aiLog('Backend not reachable. The 3D engine needs the Python middle-end (server.py) for MOLA + C++ layers. '+e,'m');
+  }
+}
+
+// ---- picking --------------------------------------------------------------
+const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2();
+canvas.addEventListener('click',e=>{
+  if(MODE!=='orbit')return;
+  mouse.x=(e.clientX/innerWidth)*2-1; mouse.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  if(!globe)return;
+  const hit=ray.intersectObject(globe)[0];
+  if(!hit)return;
+  const {lat,lon}=lonLatFromPoint(hit.point);
+  marker.position.copy(hit.point.clone().normalize().multiplyScalar(hit.point.length()));
+  marker.visible=true;
+  document.getElementById('h-lat').textContent=lat.toFixed(2);
+  document.getElementById('h-lon').textContent=lon.toFixed(2);
+  document.getElementById('btn-surface').disabled=false;
+  document.getElementById('mode-hint').textContent=`Picked ${lat.toFixed(1)}, ${lon.toFixed(1)}. “Enter surface” for ground view.`;
+  picked={lat,lon};
+  // fetch sample
+  fetch(`${API}/terrain/sample?lat=${lat}&lon=${lon}`).then(r=>r.json()).then(d=>{
+    picked={...picked,...d};
+    document.getElementById('h-elev').textContent=d.elev_m+' m';
+  }).catch(()=>{});
+});
+
+// ---- layer toggle ---------------------------------------------------------
+document.querySelectorAll('#layers button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#layers button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); LAYER=b.dataset.l;
+  if(globe)globe._recolor();
+});
+
+// ---- surface (geoguesser) mode -------------------------------------------
+let surfaceMesh=null, surfaceState=null;
+const surfSize=24; // tile half-size -> 49x49
+async function enterSurface(){
+  if(!picked)return;
+  const {lat,lon}=picked;
+  document.getElementById('cross').classList.add('on');
+  aiLog('Entering surface view at '+lat.toFixed(1)+', '+lon.toFixed(1)+'…','m');
+  let tile;
+  try{tile=await fetch(`${API}/terrain/tile?lat=${lat}&lon=${lon}&size=${surfSize}`).then(r=>r.json());}
+  catch(e){aiLog('tile fetch failed: '+e,'m');return;}
+  // build local displaced plane (XY plane, Z up), 1 cell = 14.82 km
+  const N=2*surfSize+1; const cellKm=14.82;
+  const positions=new Float32Array(N*N*3);
+  const colors=new Float32Array(N*N*3);
+  const idx=[];
+  let eMinL=1e9,eMaxL=-1e9;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const e=tile.grid[r][c].e; if(e<eMinL)eMinL=e; if(e>eMaxL)eMaxL=e;}
+  const EW=cellKm*1.0, ZK=0.6; // vertical km exaggeration for ground view
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const e=tile.grid[r][c].e;
+    const x=(c-surfSize)*cellKm, y=(surfSize-r)*cellKm, z=(e/1000)*ZK;
+    const i=r*N+c;
+    positions[i*3]=x;positions[i*3+1]=y;positions[i*3+2]=z;
+    let col;
+    if(LAYER==='elev') col=elevColor(e,eMinL,eMaxL);
+    else if(LAYER==='slope') col=heatColor(tile.grid[r][c].s,0,30);
+    else if(LAYER==='rough') col=heatColor(tile.grid[r][c].r,0,400);
+    else col=heatColor(tile.grid[r][c].hz,0,1);
+    colors[i*3]=col[0];colors[i*3+1]=col[1];colors[i*3+2]=col[2];
+  }
+  for(let r=0;r<N-1;r++)for(let c=0;c<N-1;c++){
+    const a=r*N+c,b=a+1,cc=(r+1)*N+c,d=cc+1; idx.push(a,cc,b,b,cc,d);
+  }
+  if(surfaceMesh)scene.remove(surfaceMesh);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  g.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  g.setIndex(idx); g.computeVertexNormals();
+  surfaceMesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.9,side:THREE.DoubleSide}));
+  scene.add(surfaceMesh);
+  // hide globe, place camera at center top of the tile
+  if(globe)globe.visible=false;
+  const centerE=tile.grid[surfSize][surfSize].e/1000*ZK;
+  camera.position.set(0, -2, centerE+1.2);
+  controls.enabled=false; MODE='surface';
+  surfaceState={yaw:0,pitch:-0.05,fov:camera.fov};
+  document.getElementById('btn-surface').textContent='Exit to orbit';
+  document.getElementById('btn-surface').classList.add('on');
+  document.getElementById('mode-hint').textContent='Drag to look · Wheel to zoom · the mesh around you is real MOLA terrain (exaggerated).';
+  aiLog('On the ground. Elev '+tile.grid[surfSize][surfSize].e+' m, slope '+tile.grid[surfSize][surfSize].s+'°, hazard '+tile.grid[surfSize][surfSize].hz+'.','m');
+}
+function exitSurface(){
+  if(surfaceMesh){scene.remove(surfaceMesh);surfaceMesh=null;}
+  if(globe)globe.visible=true;
+  controls.enabled=true; MODE='orbit';
+  camera.position.set(0,0,3.2); controls.target.set(0,0,0);
+  document.getElementById('cross').classList.remove('on');
+  document.getElementById('btn-surface').textContent='Enter surface';
+  document.getElementById('btn-surface').classList.remove('on');
+  document.getElementById('mode-hint').textContent='Click the globe to pick a point, then Enter surface for a ground view.';
+}
+document.getElementById('btn-surface').onclick=()=>{ if(MODE==='surface')exitSurface(); else enterSurface(); };
+document.getElementById('btn-orbit').onclick=()=>{ if(MODE==='surface')exitSurface(); };
+
+// surface look controls (drag = yaw/pitch, wheel = fov)
+let dragging=false, lx=0, ly=0;
+canvas.addEventListener('mousedown',e=>{if(MODE==='surface'){dragging=true;lx=e.clientX;ly=e.clientY;}});
+canvas.addEventListener('mousemove',e=>{
+  if(MODE==='surface'&&dragging&&surfaceState){
+    surfaceState.yaw-=(e.clientX-lx)*0.004;
+    surfaceState.pitch=Math.max(-1.2,Math.min(1.2,surfaceState.pitch-(e.clientY-ly)*0.004));
+    lx=e.clientX;ly=e.clientY;
+  }
+});
+window.addEventListener('mouseup',()=>dragging=false);
+canvas.addEventListener('wheel',e=>{
+  if(MODE==='surface'){e.preventDefault();camera.fov=Math.max(20,Math.min(90,camera.fov+e.deltaY*0.05));camera.updateProjectionMatrix();}
+},{passive:false});
+
+function updateSurfaceCam(){
+  if(MODE!=='surface'||!surfaceState)return;
+  const dir=new THREE.Vector3(Math.sin(surfaceState.yaw)*Math.cos(surfaceState.pitch),
+                              Math.cos(surfaceState.yaw)*Math.cos(surfaceState.pitch),
+                              Math.sin(surfaceState.pitch));
+  camera.lookAt(camera.position.clone().add(dir));
+}
+
+// ---- AI -------------------------------------------------------------------
+const aiLogEl=document.getElementById('ai-log');
+function aiLog(msg,cls='a'){const d=document.createElement('div');d.className=cls;d.innerHTML=msg;aiLogEl.appendChild(d);aiLogEl.scrollTop=aiLogEl.scrollHeight;}
+async function aiAsk(){
+  const q=document.getElementById('ai-input').value.trim(); if(!q)return;
+  aiLog('<b>you:</b> '+q,'m');
+  document.getElementById('ai-input').value='';
+  try{
+    const r=await fetch(`${API}/ai/ask?q=${encodeURIComponent(q)}`).then(r=>r.json());
+    aiLog(`<b>NAM</b> <span style="color:var(--tx3)">[${r.engine}/${r.intent||'?'} ${Math.round((r.confidence||0)*100)}%]</span><br>${(r.answer||'').replace(/</g,'&lt;')}`,'a');
+  }catch(e){aiLog('AI unreachable: '+e,'m');}
+}
+document.getElementById('ai-send').onclick=aiAsk;
+document.getElementById('ai-input').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();aiAsk();}};
+document.getElementById('ai-clear').onclick=()=>aiLogEl.innerHTML='';
+
+// ---- render loop ----------------------------------------------------------
+function loop(){
+  requestAnimationFrame(loop);
+  if(MODE==='surface')updateSurfaceCam();
+  controls.update();
+  renderer.render(scene,camera);
+}
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+loop();
+load();
+</script>
+</body>
+</html>
