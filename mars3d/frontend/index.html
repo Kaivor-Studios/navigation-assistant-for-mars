@@ -1,361 +1,187 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NAM 3D — Mars</title>
-<style>
-:root{--bg:#05070b;--panel:#0d1219ee;--line:#1c2633;--tx:#e8eef5;--tx2:#9aa7b6;--tx3:#647184;
---acc:#ff6a2b;--cyan:#3ec9dc;--ok:#3fd68f;--warn:#ffb02e;--bad:#ff5d5d;--mono:ui-monospace,Menlo,Consolas,monospace}
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:var(--bg);color:var(--tx);font:13px/1.4 'Segoe UI',system-ui,sans-serif;overflow:hidden}
-#c{position:fixed;inset:0;display:block}
-#ui{position:fixed;top:10px;left:10px;z-index:10;display:flex;flex-direction:column;gap:8px;max-width:240px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;backdrop-filter:blur(6px)}
-.card h4{font-size:10px;letter-spacing:1.5px;color:var(--tx3);text-transform:uppercase;margin-bottom:6px}
-.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-button{font:inherit;color:var(--tx);background:var(--bg2,#10161f);border:1px solid var(--line2,#273546);border-radius:5px;padding:4px 8px;cursor:pointer}
-button:hover{border-color:var(--acc);color:var(--acc)}
-button.primary{background:var(--acc);color:#160a04;border-color:var(--acc);font-weight:600}
-button.on{border-color:var(--cyan);color:var(--cyan)}
-input,select{font:inherit;color:var(--tx);background:#10161f;border:1px solid var(--line);border-radius:4px;padding:4px 6px;outline:none}
-.lay{display:flex;gap:4px;flex-wrap:wrap}
-.lay button{font-size:10.5px;padding:3px 7px}
-#hud{position:fixed;bottom:10px;left:10px;z-index:10;font-family:var(--mono);font-size:11px;color:var(--tx2);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
-#hud b{color:var(--cyan);font-weight:400}
-#status{position:fixed;top:10px;right:10px;z-index:10;font-family:var(--mono);font-size:10.5px;color:var(--tx3);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 9px;max-width:260px}
-#status .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bad);margin-right:4px}
-#status.ok .led{background:var(--ok)}
-#ai{position:fixed;bottom:10px;right:10px;z-index:10;width:330px;max-width:42vw}
-#ai .log{max-height:160px;overflow:auto;font-size:11.5px;color:var(--tx2);margin:6px 0}
-#ai .log .a{color:var(--tx)}#ai .log .m{color:var(--tx3);font-size:10px}
-#ai textarea{width:100%;resize:none;height:36px}
-.cross{position:fixed;top:50%;left:50%;width:18px;height:18px;transform:translate(-50%,-50%);pointer-events:none;z-index:9;opacity:0}
-.cross.on{opacity:.8}
-.cross::before,.cross::after{content:"";position:absolute;background:var(--cyan)}
-.cross::before{left:8px;top:0;width:2px;height:18px}.cross::after{top:8px;left:0;height:2px;width:18px}
-.hint{font-size:10.5px;color:var(--tx3)}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-family:var(--mono);font-size:11px}
-.kv .k{color:var(--tx3)}.kv .v{color:var(--tx)}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101311" />
+  <meta name="description" content="Explore Mars with NASA planetary imagery and mission data." />
+  <title>Marswalk — planetary atlas</title>
+  <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Widgets/widgets.css" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script>
+    window.CESIUM_BASE_URL = "https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/";
+  </script>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js"></script>
+  <script src="./app.js" defer></script>
 </head>
 <body>
-<canvas id="c"></canvas>
+  <main class="map-app">
+    <div id="cesiumContainer" aria-label="Interactive three-dimensional globe of Mars"></div>
 
-<div id="ui">
-  <div class="card">
-    <h4>Layers (depth)</h4>
-    <div class="lay" id="layers">
-      <button data-l="elev" class="on">Elevation</button>
-      <button data-l="slope">Slope</button>
-      <button data-l="rough">Roughness</button>
-      <button data-l="hazard">Hazard</button>
+    <a class="brand" href="#" aria-label="Marswalk home" title="Marswalk">
+      <span class="brand-mark">M</span>
+      <span class="brand-name">marswalk</span>
+    </a>
+
+    <div class="top-tools" aria-label="Map tools">
+      <button class="icon-button" id="search-toggle" type="button" aria-label="Search location" aria-expanded="false" data-tip="Search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4.4 4.4"/></svg>
+      </button>
+      <button class="icon-button" id="layers-toggle" type="button" aria-label="Map layers" aria-expanded="false" data-tip="Layers">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>
+      </button>
+      <button class="icon-button" id="data-toggle" type="button" aria-label="Data catalogue" aria-expanded="false" data-tip="Data catalogue">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/><path d="M4 6v14.5A2.5 2.5 0 0 1 6.5 18H20M8 7h8M8 11h8"/></svg>
+      </button>
+      <button class="icon-button" id="download-view" type="button" aria-label="Save map image" data-tip="Save map image">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4"/><path d="M4 16v4h16v-4"/></svg>
+      </button>
+      <button class="icon-button" id="about-toggle" type="button" aria-label="About Marswalk" data-tip="About">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+      </button>
     </div>
-    <div class="hint" style="margin-top:5px">Exaggeration ×60 (cosmetic; measurements use true MOLA metres).</div>
-  </div>
-  <div class="card">
-    <h4>View</h4>
-    <div class="row">
-      <button id="btn-orbit" class="on">Orbit</button>
-      <button id="btn-surface" disabled>Enter surface</button>
+
+    <nav class="tool-rail" aria-label="Map actions">
+      <button class="icon-button" id="places-toggle" type="button" aria-label="Places" aria-expanded="false" data-tip="Places">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.2"/></svg>
+      </button>
+      <button class="icon-button" id="route-mode" type="button" aria-label="Plan a traverse" aria-pressed="false" data-tip="Plan a traverse">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 17c2-1 1-4 3-5s4 0 5-3"/></svg>
+      </button>
+      <span class="rail-separator" aria-hidden="true"></span>
+      <button class="icon-button" id="home-view" type="button" aria-label="Return to Mars overview" data-tip="Overview">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9M9.5 19v-5.5h5V19"/></svg>
+      </button>
+    </nav>
+
+    <div class="map-status" aria-live="polite">
+      <span class="status-dot" id="connection-dot"></span>
+      <span id="connection-label">Connecting to Mars Trek</span>
     </div>
-    <div class="hint" style="margin-top:5px" id="mode-hint">Click the globe to pick a point, then Enter surface for a geoguesser-style ground view.</div>
-  </div>
-</div>
 
-<div id="status"><span class="led"></span><span id="status-t">connecting…</span></div>
+    <div class="map-readout"><span id="region-label">Global view</span><span class="readout-separator"> · </span><span id="coordinate-readout">Mars</span></div>
+    <div class="map-credit" id="map-credit">Viking MDIM 2.1 · NASA / JPL / USGS</div>
 
-<div id="hud">LAT <b id="h-lat">—</b> · LON <b id="h-lon">—</b> · ELEV <b id="h-elev">—</b></div>
+    <div class="zoom-tools" aria-label="Zoom controls">
+      <button class="icon-button" id="zoom-in" type="button" aria-label="Zoom in" data-tip="Zoom in">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-button" id="zoom-out" type="button" aria-label="Zoom out" data-tip="Zoom out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+    </div>
 
-<div class="cross" id="cross"></div>
+    <form class="floating-search hidden" id="search-panel" role="search">
+      <label class="sr-only" for="location-search">Search a place or coordinates</label>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4.4 4.4"/></svg>
+      <input id="location-search" type="search" placeholder="Place or latitude, longitude" autocomplete="off" />
+      <button class="search-submit" type="submit" aria-label="Search">↵</button>
+    </form>
 
-<div id="ai" class="card">
-  <h4>NAM AI (hybrid)</h4>
-  <div class="log" id="ai-log"></div>
-  <textarea id="ai-input" placeholder="Ask: what is the gravity? / tallest volcano? / Tell me about Jezero"></textarea>
-  <div class="row" style="margin-top:5px"><button class="primary" id="ai-send" style="flex:1">Ask</button><button id="ai-clear">✕</button></div>
-</div>
+    <aside class="floating-panel hidden" id="layers-panel" aria-label="Map layers">
+      <div class="panel-heading">
+        <div><span class="panel-eyebrow">Map</span><h2>Layers</h2></div>
+        <button class="close-button" data-close="layers-panel" type="button" aria-label="Close layers">×</button>
+      </div>
+      <div class="panel-scroll">
+        <section class="panel-section">
+          <div class="section-title-row"><h3>Base map</h3><span id="active-base-label">Viking colour</span></div>
+          <div id="base-layer-list" class="base-layer-list"></div>
+        </section>
+        <section class="panel-section">
+          <div class="section-title-row"><h3>Overlays</h3><span id="overlay-count">0 active</span></div>
+          <div class="layer-search-wrap">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 4.4 4.4"/></svg>
+            <input id="layer-filter" type="search" placeholder="Find a layer" autocomplete="off" />
+          </div>
+          <div id="overlay-layer-list" class="overlay-layer-list"></div>
+        </section>
+        <details class="custom-layer-details">
+          <summary>Add a tile service</summary>
+          <form id="custom-layer-form" class="custom-layer-form">
+            <label for="custom-layer-name">Layer name</label>
+            <input id="custom-layer-name" type="text" placeholder="e.g. Regional elevation" maxlength="60" required />
+            <label for="custom-layer-url">Tile resource URL</label>
+            <input id="custom-layer-url" type="url" placeholder="https://…/{TileMatrix}/{TileRow}/{TileCol}.jpg" required />
+            <p>Paste a tile template from WMTS capabilities or an XYZ URL. It must use Mars equirectangular coordinates (EPSG:104905).</p>
+            <button type="submit" class="text-action">Add to map</button>
+          </form>
+        </details>
+        <a class="external-row" href="https://trek.nasa.gov/tiles/apidoc/trekAPI.html?body=mars" target="_blank" rel="noreferrer">Open Mars Trek layer catalogue <span>↗</span></a>
+      </div>
+    </aside>
 
-<script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
-</script>
-<script type="module">
-import * as THREE from 'three';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+    <aside class="floating-panel hidden" id="data-panel" aria-label="Mars data catalogue">
+      <div class="panel-heading">
+        <div><span class="panel-eyebrow">Sources & downloads</span><h2>Data catalogue</h2></div>
+        <button class="close-button" data-close="data-panel" type="button" aria-label="Close data catalogue">×</button>
+      </div>
+      <div class="panel-scroll" id="data-source-list"></div>
+    </aside>
 
-const API = location.origin;   // same-origin FastAPI backend
-const MARS_R_KM = 3396.19;
-const EXAG = 60;               // cosmetic vertical exaggeration for the globe
-let MODE = 'orbit';            // 'orbit' | 'surface'
-let LAYER = 'elev';
-let picked = null;             // {lat,lon,elev,slope,rough,hazard}
+    <aside class="floating-panel places-panel hidden" id="places-panel" aria-label="Mars places">
+      <div class="panel-heading">
+        <div><span class="panel-eyebrow">Explore</span><h2>Places</h2></div>
+        <button class="close-button" data-close="places-panel" type="button" aria-label="Close places">×</button>
+      </div>
+      <div class="panel-scroll">
+        <div id="place-list" class="place-list"></div>
+      </div>
+    </aside>
 
-// ---- color ramps ----------------------------------------------------------
-function ramp(t, stops){ // stops: [[p,[r,g,b]],...]
-  t=Math.max(0,Math.min(1,t));
-  for(let i=0;i<stops.length-1;i++){
-    const [p0,c0]=stops[i],[p1,c1]=stops[i+1];
-    if(t>=p0&&t<=p1){const u=(t-p0)/(p1-p0||1);
-      return [c0[0]+(c1[0]-c0[0])*u,c0[1]+(c1[1]-c0[1])*u,c0[2]+(c1[2]-c0[2])*u];}}
-  return stops[stops.length-1][1];
-}
-const ELEV_RAMP=[[0,[20,30,80]],[.25,[60,40,40]],[.5,[120,70,50]],[.75,[180,110,70]],[1,[230,210,180]]];
-const HEAT_RAMP=[[0,[30,120,60]],[.5,[230,200,40]],[1,[220,40,40]]];
-function elevColor(e,min,max){return ramp((e-min)/(max-min),ELEV_RAMP);}
-function heatColor(v,lo,hi){return ramp((v-lo)/(hi-lo),HEAT_RAMP);}
+    <aside class="floating-panel inspector-panel hidden" id="inspector-panel" aria-live="polite">
+      <div class="panel-heading">
+        <div><span class="panel-eyebrow">Surface point</span><h2 id="inspector-title">Selected location</h2></div>
+        <button class="close-button" id="clear-selection" type="button" aria-label="Close details">×</button>
+      </div>
+      <div class="panel-scroll">
+        <p class="inspector-coordinates" id="selected-coordinates">—</p>
+        <div class="coordinate-grid">
+          <div><span>Latitude</span><strong id="selected-lat">—</strong></div>
+          <div><span>Longitude</span><strong id="selected-lon">—</strong></div>
+        </div>
+        <p class="inspector-note" id="inspector-note">Location selected on the Viking global colour mosaic.</p>
+        <button class="panel-button" id="add-waypoint" type="button">Add to traverse</button>
+      </div>
+    </aside>
 
-// ---- scene ----------------------------------------------------------------
-const canvas=document.getElementById('c');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-renderer.setSize(innerWidth,innerHeight);
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x05070b);
-const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.001,100);
-camera.position.set(0,0,3.2);
-const controls=new OrbitControls(camera,canvas);
-controls.enableDamping=true; controls.rotateSpeed=0.5; controls.minDistance=1.05; controls.maxDistance=6;
-scene.add(new THREE.AmbientLight(0x404050,1.2));
-const sun=new THREE.DirectionalLight(0xfff0e0,1.4); sun.position.set(5,3,5); scene.add(sun);
-const rim=new THREE.DirectionalLight(0x4060a0,0.4); rim.position.set(-5,-2,-3); scene.add(rim);
+    <aside class="floating-panel route-panel hidden" id="route-panel" aria-label="Traverse planner">
+      <div class="panel-heading">
+        <div><span class="panel-eyebrow">Mission planning</span><h2>Traverse</h2></div>
+        <button class="close-button" id="close-route" type="button" aria-label="Close traverse panel">×</button>
+      </div>
+      <div class="panel-scroll">
+        <p class="route-instruction" id="route-instruction">Click the surface to add waypoints. Right-click to finish.</p>
+        <div class="route-metrics">
+          <div><span>Distance</span><strong id="route-distance">0.0 <small>km</small></strong></div>
+          <div><span>Waypoints</span><strong id="route-points">0</strong></div>
+        </div>
+        <div class="waypoint-list" id="waypoint-list"><span class="empty-waypoints">No waypoints yet</span></div>
+        <div class="route-actions">
+          <button class="text-action" id="clear-route" type="button">Clear route</button>
+          <button class="panel-button" id="export-route" type="button" disabled>Export GeoJSON</button>
+        </div>
+        <p class="small-note">Distance is a surface estimate only. This prototype does not assess walkability or mission safety.</p>
+      </div>
+    </aside>
 
-// starfield
-const sg=new THREE.BufferGeometry(); const starN=2500; const sp=new Float32Array(starN*3);
-for(let i=0;i<starN;i++){const d=40,u=Math.random()*2*Math.PI,v=Math.acos(2*Math.random()-1);
-  sp[i*3]=d*Math.sin(v)*Math.cos(u);sp[i*3+1]=d*Math.sin(v)*Math.sin(u);sp[i*3+2]=d*Math.cos(v);}
-sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
-scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0x8899aa,size:0.05})));
+    <div class="map-loading" id="map-loading"><span class="loading-spinner"></span><span>Finding Mars…</span></div>
+    <div class="map-error hidden" id="map-error" role="alert">
+      <strong id="map-error-title">Map unavailable</strong>
+      <p id="map-error-message">The globe could not initialize.</p>
+      <code id="map-error-detail"></code>
+      <button id="retry-map" type="button">Retry</button>
+    </div>
 
-// ---- globe ----------------------------------------------------------------
-let globe=null, elevArr=null, layerArr={slope:null,rough:null,hazard:null}, gridW=360, gridH=180, eMin=0, eMax=1;
-const marker=new THREE.Mesh(new THREE.SphereGeometry(0.012,12,12),new THREE.MeshBasicMaterial({color:0x3ec9dc}));
-marker.visible=false; scene.add(marker);
+    <dialog id="notice-dialog" class="notice-dialog">
+      <button class="close-button" id="close-notice" type="button" aria-label="Close">×</button>
+      <span class="panel-eyebrow">About Marswalk</span>
+      <h2>A field atlas for Mars.</h2>
+      <p>Explore NASA/JPL imagery, compare planetary datasets and sketch proposed traverses. Scientific layers retain their source names and coverage limits.</p>
+      <p class="small-note">A drawn route is not a safety assessment. Surface hazards require separate, validated elevation and environmental datasets.</p>
+      <a href="https://trek.nasa.gov/tiles/apidoc/trekAPI.html?body=mars" target="_blank" rel="noreferrer">NASA/JPL Mars Trek services ↗</a>
+    </dialog>
+  </main>
 
-function sampleGrid(arr,w,h,lon,lat){ // lon 0..360, lat +90..-90
-  const x=(lon/360*w)%w, y=(90-lat)/180*(h-1);
-  const xi=Math.floor(x)%w, yi=Math.max(0,Math.min(h-1,Math.floor(y)));
-  return arr[yi*w+xi];
-}
-function lonLatFromPoint(p){
-  const v=p.clone().normalize();
-  const lat=Math.asin(v.y)*180/Math.PI;
-  let lon=Math.atan2(v.z,v.x)*180/Math.PI; if(lon<0)lon+=360;
-  return {lat,lon};
-}
-function colorFor(lon,lat,e,eMinL,eMaxL){
-  if(LAYER==='elev') return elevColor(e,eMinL,eMaxL);
-  if(LAYER==='slope') return heatColor(sampleGrid(layerArr.slope,gridW,gridH,lon,lat),0,30);
-  if(LAYER==='rough') return heatColor(sampleGrid(layerArr.rough,gridW,gridH,lon,lat),0,400);
-  return heatColor(sampleGrid(layerArr.hazard,gridW,gridH,lon,lat),0,1);
-}
-function buildGlobe(){
-  const W=gridW,H=gridH;
-  const positions=new Float32Array((W+1)*(H+1)*3);
-  const colors=new Float32Array((W+1)*(H+1)*3);
-  const idx=[];
-  for(let j=0;j<=H;j++) for(let i=0;i<=W;i++){
-    const lon=i/W*360, lat=90-j/H*180;
-    const e=sampleGrid(elevArr,W,H,lon,lat);
-    const rr=1 + (e/1000)/MARS_R_KM*EXAG;     // metres -> km -> fraction of R -> ×exaggeration
-    const ph=lon*Math.PI/180, th=lat*Math.PI/180;
-    const vi=j*(W+1)+i;
-    positions[vi*3]=rr*Math.cos(th)*Math.cos(ph);
-    positions[vi*3+1]=rr*Math.sin(th);
-    positions[vi*3+2]=rr*Math.cos(th)*Math.sin(ph);
-    const c=colorFor(lon,lat,e,eMin,eMax);
-    colors[vi*3]=c[0];colors[vi*3+1]=c[1];colors[vi*3+2]=c[2];
-  }
-  for(let j=0;j<H;j++) for(let i=0;i<W;i++){
-    const a=j*(W+1)+i,b=a+1,c=a+(W+1),d=c+1;
-    idx.push(a,c,b, b,c,d);
-  }
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.BufferAttribute(positions,3));
-  g.setAttribute('color',new THREE.BufferAttribute(colors,3));
-  g.setIndex(idx); g.computeVertexNormals();
-  globe=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.92,metalness:0.0}));
-  scene.add(globe);
-  globe._recolor=()=>{
-    const col=g.getAttribute('color');
-    for(let j=0;j<=H;j++) for(let i=0;i<=W;i++){
-      const lon=i/W*360, lat=90-j/H*180;
-      const e=sampleGrid(elevArr,W,H,lon,lat);
-      const c=colorFor(lon,lat,e,eMin,eMax);
-      const vi=j*(W+1)+i;
-      col.array[vi*3]=c[0];col.array[vi*3+1]=c[1];col.array[vi*3+2]=c[2];
-    }
-    col.needsUpdate=true;
-  };
-}
-
-// ---- status helper --------------------------------------------------------
-const statusEl=document.getElementById('status'), statusT=document.getElementById('status-t');
-function setStatus(ok,msg){statusEl.classList.toggle('ok',!!ok);statusT.textContent=msg;}
-
-// ---- load data ------------------------------------------------------------
-async function load(){
-  setStatus(false,'loading MOLA grid…');
-  try{
-    const hm=await fetch(`${API}/globe/heightmap`).then(r=>r.json());
-    elevArr=hm.data; gridW=hm.w; gridH=hm.h; eMin=hm.min; eMax=hm.max;
-    setStatus(false,'computing layers (C++)…');
-    const ly=await fetch(`${API}/globe/layers`).then(r=>r.json());
-    layerArr.slope=new Float32Array(ly.slope);layerArr.rough=new Float32Array(ly.rough);layerArr.hazard=new Float32Array(ly.hazard);
-    buildGlobe();
-    setStatus(true,'backend online · C++ cruncher + AI');
-    aiLog('NAM 3D ready. Click the globe, then “Enter surface”.','m');
-  }catch(e){
-    setStatus(false,'backend offline — run: cd backend && python3 server.py');
-    aiLog('Backend not reachable. The 3D engine needs the Python middle-end (server.py) for MOLA + C++ layers. '+e,'m');
-  }
-}
-
-// ---- picking --------------------------------------------------------------
-const ray=new THREE.Raycaster(); const mouse=new THREE.Vector2();
-canvas.addEventListener('click',e=>{
-  if(MODE!=='orbit')return;
-  mouse.x=(e.clientX/innerWidth)*2-1; mouse.y=-(e.clientY/innerHeight)*2+1;
-  ray.setFromCamera(mouse,camera);
-  if(!globe)return;
-  const hit=ray.intersectObject(globe)[0];
-  if(!hit)return;
-  const {lat,lon}=lonLatFromPoint(hit.point);
-  marker.position.copy(hit.point.clone().normalize().multiplyScalar(hit.point.length()));
-  marker.visible=true;
-  document.getElementById('h-lat').textContent=lat.toFixed(2);
-  document.getElementById('h-lon').textContent=lon.toFixed(2);
-  document.getElementById('btn-surface').disabled=false;
-  document.getElementById('mode-hint').textContent=`Picked ${lat.toFixed(1)}, ${lon.toFixed(1)}. “Enter surface” for ground view.`;
-  picked={lat,lon};
-  // fetch sample
-  fetch(`${API}/terrain/sample?lat=${lat}&lon=${lon}`).then(r=>r.json()).then(d=>{
-    picked={...picked,...d};
-    document.getElementById('h-elev').textContent=d.elev_m+' m';
-  }).catch(()=>{});
-});
-
-// ---- layer toggle ---------------------------------------------------------
-document.querySelectorAll('#layers button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#layers button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on'); LAYER=b.dataset.l;
-  if(globe)globe._recolor();
-});
-
-// ---- surface (geoguesser) mode -------------------------------------------
-let surfaceMesh=null, surfaceState=null;
-const surfSize=24; // tile half-size -> 49x49
-async function enterSurface(){
-  if(!picked)return;
-  const {lat,lon}=picked;
-  document.getElementById('cross').classList.add('on');
-  aiLog('Entering surface view at '+lat.toFixed(1)+', '+lon.toFixed(1)+'…','m');
-  let tile;
-  try{tile=await fetch(`${API}/terrain/tile?lat=${lat}&lon=${lon}&size=${surfSize}`).then(r=>r.json());}
-  catch(e){aiLog('tile fetch failed: '+e,'m');return;}
-  // build local displaced plane (XY plane, Z up), 1 cell = 14.82 km
-  const N=2*surfSize+1; const cellKm=14.82;
-  const positions=new Float32Array(N*N*3);
-  const colors=new Float32Array(N*N*3);
-  const idx=[];
-  let eMinL=1e9,eMaxL=-1e9;
-  for(let r=0;r<N;r++)for(let c=0;c<N;c++){const e=tile.grid[r][c].e; if(e<eMinL)eMinL=e; if(e>eMaxL)eMaxL=e;}
-  const EW=cellKm*1.0, ZK=0.6; // vertical km exaggeration for ground view
-  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
-    const e=tile.grid[r][c].e;
-    const x=(c-surfSize)*cellKm, y=(surfSize-r)*cellKm, z=(e/1000)*ZK;
-    const i=r*N+c;
-    positions[i*3]=x;positions[i*3+1]=y;positions[i*3+2]=z;
-    let col;
-    if(LAYER==='elev') col=elevColor(e,eMinL,eMaxL);
-    else if(LAYER==='slope') col=heatColor(tile.grid[r][c].s,0,30);
-    else if(LAYER==='rough') col=heatColor(tile.grid[r][c].r,0,400);
-    else col=heatColor(tile.grid[r][c].hz,0,1);
-    colors[i*3]=col[0];colors[i*3+1]=col[1];colors[i*3+2]=col[2];
-  }
-  for(let r=0;r<N-1;r++)for(let c=0;c<N-1;c++){
-    const a=r*N+c,b=a+1,cc=(r+1)*N+c,d=cc+1; idx.push(a,cc,b,b,cc,d);
-  }
-  if(surfaceMesh)scene.remove(surfaceMesh);
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.BufferAttribute(positions,3));
-  g.setAttribute('color',new THREE.BufferAttribute(colors,3));
-  g.setIndex(idx); g.computeVertexNormals();
-  surfaceMesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.9,side:THREE.DoubleSide}));
-  scene.add(surfaceMesh);
-  // hide globe, place camera at center top of the tile
-  if(globe)globe.visible=false;
-  const centerE=tile.grid[surfSize][surfSize].e/1000*ZK;
-  camera.position.set(0, -2, centerE+1.2);
-  controls.enabled=false; MODE='surface';
-  surfaceState={yaw:0,pitch:-0.05,fov:camera.fov};
-  document.getElementById('btn-surface').textContent='Exit to orbit';
-  document.getElementById('btn-surface').classList.add('on');
-  document.getElementById('mode-hint').textContent='Drag to look · Wheel to zoom · the mesh around you is real MOLA terrain (exaggerated).';
-  aiLog('On the ground. Elev '+tile.grid[surfSize][surfSize].e+' m, slope '+tile.grid[surfSize][surfSize].s+'°, hazard '+tile.grid[surfSize][surfSize].hz+'.','m');
-}
-function exitSurface(){
-  if(surfaceMesh){scene.remove(surfaceMesh);surfaceMesh=null;}
-  if(globe)globe.visible=true;
-  controls.enabled=true; MODE='orbit';
-  camera.position.set(0,0,3.2); controls.target.set(0,0,0);
-  document.getElementById('cross').classList.remove('on');
-  document.getElementById('btn-surface').textContent='Enter surface';
-  document.getElementById('btn-surface').classList.remove('on');
-  document.getElementById('mode-hint').textContent='Click the globe to pick a point, then Enter surface for a ground view.';
-}
-document.getElementById('btn-surface').onclick=()=>{ if(MODE==='surface')exitSurface(); else enterSurface(); };
-document.getElementById('btn-orbit').onclick=()=>{ if(MODE==='surface')exitSurface(); };
-
-// surface look controls (drag = yaw/pitch, wheel = fov)
-let dragging=false, lx=0, ly=0;
-canvas.addEventListener('mousedown',e=>{if(MODE==='surface'){dragging=true;lx=e.clientX;ly=e.clientY;}});
-canvas.addEventListener('mousemove',e=>{
-  if(MODE==='surface'&&dragging&&surfaceState){
-    surfaceState.yaw-=(e.clientX-lx)*0.004;
-    surfaceState.pitch=Math.max(-1.2,Math.min(1.2,surfaceState.pitch-(e.clientY-ly)*0.004));
-    lx=e.clientX;ly=e.clientY;
-  }
-});
-window.addEventListener('mouseup',()=>dragging=false);
-canvas.addEventListener('wheel',e=>{
-  if(MODE==='surface'){e.preventDefault();camera.fov=Math.max(20,Math.min(90,camera.fov+e.deltaY*0.05));camera.updateProjectionMatrix();}
-},{passive:false});
-
-function updateSurfaceCam(){
-  if(MODE!=='surface'||!surfaceState)return;
-  const dir=new THREE.Vector3(Math.sin(surfaceState.yaw)*Math.cos(surfaceState.pitch),
-                              Math.cos(surfaceState.yaw)*Math.cos(surfaceState.pitch),
-                              Math.sin(surfaceState.pitch));
-  camera.lookAt(camera.position.clone().add(dir));
-}
-
-// ---- AI -------------------------------------------------------------------
-const aiLogEl=document.getElementById('ai-log');
-function aiLog(msg,cls='a'){const d=document.createElement('div');d.className=cls;d.innerHTML=msg;aiLogEl.appendChild(d);aiLogEl.scrollTop=aiLogEl.scrollHeight;}
-async function aiAsk(){
-  const q=document.getElementById('ai-input').value.trim(); if(!q)return;
-  aiLog('<b>you:</b> '+q,'m');
-  document.getElementById('ai-input').value='';
-  try{
-    const r=await fetch(`${API}/ai/ask?q=${encodeURIComponent(q)}`).then(r=>r.json());
-    aiLog(`<b>NAM</b> <span style="color:var(--tx3)">[${r.engine}/${r.intent||'?'} ${Math.round((r.confidence||0)*100)}%]</span><br>${(r.answer||'').replace(/</g,'&lt;')}`,'a');
-  }catch(e){aiLog('AI unreachable: '+e,'m');}
-}
-document.getElementById('ai-send').onclick=aiAsk;
-document.getElementById('ai-input').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();aiAsk();}};
-document.getElementById('ai-clear').onclick=()=>aiLogEl.innerHTML='';
-
-// ---- render loop ----------------------------------------------------------
-function loop(){
-  requestAnimationFrame(loop);
-  if(MODE==='surface')updateSurfaceCam();
-  controls.update();
-  renderer.render(scene,camera);
-}
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
-loop();
-load();
-</script>
 </body>
 </html>
