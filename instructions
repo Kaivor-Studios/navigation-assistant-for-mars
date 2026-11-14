@@ -1,0 +1,94 @@
+MOLA grid is in `NAM.B64.ELEV` as a base64-encoded PNG (4.9MB). Need to understand the encoding. Let me extract it.
+Now I have everything I need. Let me extract the v1 data (MOLA grid + gazetteer + missions + instruments + spectral targets) and set up the project skeleton in parallel.
+Now let me extract the MOLA grid and the data structures from NAM.html.
+MOLA grid extracted and verified. Spot-checks match published MOLA values. Now extract the gazetteer/missions/instruments data using Node to evaluate the JS.
+All v1 data extracted: 102 features, 13 mission sites, 8 orbiters, 16 spectral targets, 13 instruments, 6 layers, 7 registry entries + MOLA grids. Now build the FastAPI backend.
+Good. Now build the core modules. Start with the data + geospatial engine.
+Now the route planner (A* over the MOLA grid), shelter/water/radiation catalogs, and the assistant tools.
+Now the assistant (16 v1 tools + 8 new) and the storm/presence simulation, then API routes.
+Now the in-memory state store, environment sim, and tile proxy.
+Now the API routes and main FastAPI app:
+Let me write the requirements file and try a smoke test of the server booting.
+App imports cleanly with all 30+ routes. Now boot the server and smoke-test every endpoint.
+Server boots. Now smoke-test all the geospatial + planning + walk + assistant endpoints.
+32/35 passing. Three small bugs to fix:
+1. Test function only supports GET/POST (PATCH/DELETE go through POST)
+2. Tile proxy header has non-ASCII em-dash causing latin-1 encoding failure
+3. Assistant chat — "Olympus" matches the volcano intent before the route intent
+All 35 tests pass. Tile proxy fetched a real PNG from OPM (12.9 KB). Now let me build the reference UI, API docs, and demo scenario test.
+Now let me write the API.md docs and Dockerfile.
+Two small fixes needed:
+1. Assistant routes "plan storm response for event X" to `simulate_storm` instead of `plan_storm_response`
+2. Demo script reads wrong field name (`waypoints` vs `waypoints_count`)
+Now I need to add event-id extraction logic so plan_storm_response can find the event_id from the user message:
+End-to-end demo scenario works perfectly. The assistant now correctly invokes `plan_storm_response` and the route shows 2 waypoints. Let me write the README, Dockerfile, docker-compose, package it up, and re-run smoke tests.
+Let me also add a basic test file and re-run the smoke tests to make sure everything is still green.
+The regex `\bshelter\b` doesn't match "shelters" (plural). Fix:
+<|observation|><|observation|>
+All 15 tests pass. Let me also fix the deprecation warning and re-run the full smoke test suite, then package it.
+All 35 HTTP smoke tests + 15 pytest unit tests pass. Let me also fix the deprecated `/api/v1/../health` legacy route, then package.
+Done. Backend is built, tested, packaged.
+
+## What you have
+
+**`/home/z/my-project/download/nam-backend.zip`** (2.1 MB) — ready to hand to your UI guy.
+
+### Numbers
+- **35/35** HTTP smoke tests pass (every endpoint)
+- **15/15** pytest unit tests pass (elevation spot-checks, route planner, shelters, water, radiation, walk view, assistant, sim)
+- **25 typed assistant tools** (16 v1 + 8 new + 1 walk-view)
+- **29 routes** registered (REST + 2 WebSocket)
+- **End-to-end demo scenario** runs clean: Jezero → SEP alert → storm-response plan → shelter + route + dose estimate
+
+### What's in the package
+
+```
+nam-backend/
+├── app/              # FastAPI app — 8 modules, ~1,800 LOC
+│   ├── main.py
+│   ├── api/routes.py        # 35+ REST + SSE endpoints
+│   ├── core/                 # geo, router, environment, walk, assistant, sim, state, tiles
+│   ├── ws/handlers.py        # /ws/events + /ws/presence
+│   └── data/raw/             # 4 MB MOLA grid + 260 KB roughness + 68 KB catalogs
+├── reference-ui/index.html   # throwaway HTML proving every endpoint
+├── scripts/demo_scenario.py  # end-to-end Jezero SEP drill
+├── tests/test_smoke.py       # pytest suite
+├── API.md                    # full contract for your UI guy (single source of truth)
+├── README.md
+├── Dockerfile + docker-compose.yml
+└── requirements.txt
+```
+
+### Run it
+
+```bash
+cd nam-backend && uvicorn app.main:app --reload --port 8000
+# then open http://localhost:8000/docs (Swagger) or http://localhost:8000/ (reference UI)
+```
+
+Or `docker compose up`.
+
+### What your UI guy should read first
+
+1. **`API.md`** — the contract. Read this cover-to-cover before writing any frontend code.
+2. **`/docs`** — interactive Swagger UI; click around to feel the response shapes.
+3. **`scripts/demo_scenario.py`** — the Jezero SEP drill scenario end-to-end. Your UI should be able to replay this.
+
+### Headline features ready for the UI
+
+- **Global Mars coverage**: drop a pin anywhere → elevation, slope, roughness, hazard class, pressure, radiation dose, shelters, water-ice candidates all computed on-demand
+- **Walk View data feed** (`/api/v1/walk/init`, `/walk/terrain`, `/walk/pov`): eye height + 1 km heightmap patch + nearest rover POV image — your UI builds the first-person renderer
+- **A* route planner** with 3 presets; results include waypoints, max slope, est. sols, full provenance
+- **Storm/SEP simulation + plan_storm_response**: the assistant's storm-response orchestrator (event → shelters → route → dose) all in one tool call
+- **SSE chat** in OpenAI-compatible shape so a real LLM can drop in post-hackathon without UI changes
+- **Provenance on every response** — the project's credibility anchor; render these in a "Sources" panel
+
+### Known limits (so we're honest)
+
+- In-memory state (resets on restart) — replace with SQLite for persistence
+- CORS wide open — tighten before public deploy
+- Deterministic assistant only (no LLM) — the chat shape is OpenAI-compatible so swap-in is one endpoint
+- Walk View is the **data layer** only; the actual 3D renderer is your UI's job (I return the heightmap patch + eye placement + POV image URL — your client builds the scene)
+- Mars Trek + USGS Astropedia were unreachable from this sandbox during build (verified); the tile proxy degrades to "honest 503 with source link" rather than fabricating content
+
+Tell me when you want to start the UI side, or if you want me to extend any specific endpoint before your UI guy begins.
